@@ -275,11 +275,11 @@ struct CapabilityStoreTests {
         #expect(perceptionGrant?.confirmation == .silent)
     }
 
-    @Test("Default action grants require confirmation")
-    func defaultActionRequiresConfirmation() {
+    @Test("Default action grants use logged tier")
+    func defaultActionIsLogged() {
         let grants = CapabilityStore.defaultGrants(for: "com.test.app")
         let actionGrant = grants.first { $0.domain == "action.input.*" }
-        #expect(actionGrant?.confirmation == .confirm)
+        #expect(actionGrant?.confirmation == .logged)
     }
 
     // MARK: - Permitted Bundle IDs

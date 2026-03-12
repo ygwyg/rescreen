@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "rescreen": {
+      "command": "/Users/brandon/.local/bin/rescreen",
+      "args": ["--app", "com.google.Chrome", "--app", "com.tinyspeck.slackmacgap"]
+    }
+  }
+}

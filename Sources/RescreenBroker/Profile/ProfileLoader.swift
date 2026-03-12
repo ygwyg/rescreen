@@ -146,11 +146,11 @@ final class ProfileLoader {
 
           - domain: action.input.*
             target: { app: "com.apple.finder" }
-            confirmation: confirm
+            confirmation: logged
 
           - domain: action.app.*
             target: { app: "com.apple.finder" }
-            confirmation: confirm
+            confirmation: logged
         """
         try? example.write(toFile: "\(profileDir)/example.yaml", atomically: true, encoding: .utf8)
 
@@ -168,7 +168,7 @@ final class ProfileLoader {
 
           - domain: action.input.*
             target: { app: "com.microsoft.VSCode" }
-            confirmation: confirm
+            confirmation: logged
 
           - domain: action.app.focus
             target: { app: "com.microsoft.VSCode" }
@@ -182,7 +182,7 @@ final class ProfileLoader {
           # Clipboard: confirmed access
           - domain: action.clipboard.*
             target: { app: "com.microsoft.VSCode" }
-            confirmation: confirm
+            confirmation: logged
         """
         try? coding.write(toFile: "\(profileDir)/coding.yaml", atomically: true, encoding: .utf8)
 
@@ -204,11 +204,11 @@ final class ProfileLoader {
           # Scroll and navigate (confirmed)
           - domain: action.input.mouse
             target: { app: "com.google.Chrome" }
-            confirmation: confirm
+            confirmation: logged
 
           - domain: action.input.mouse
             target: { app: "com.apple.Safari" }
-            confirmation: confirm
+            confirmation: logged
 
           # Read URLs
           - domain: action.clipboard.read

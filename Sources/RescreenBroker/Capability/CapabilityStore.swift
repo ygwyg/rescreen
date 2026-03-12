@@ -169,21 +169,21 @@ final class CapabilityStore {
                 domain: "action.input.*",
                 target: .app(bundleID),
                 scope: .session,
-                confirmation: .confirm
+                confirmation: .logged
             ),
             CapabilityGrant(
                 id: "cap_app_\(bundleID)",
                 domain: "action.app.*",
                 target: .app(bundleID),
                 scope: .session,
-                confirmation: .confirm
+                confirmation: .logged
             ),
             CapabilityGrant(
                 id: "cap_clipboard_\(bundleID)",
                 domain: "action.clipboard.*",
                 target: .app(bundleID),
                 scope: .session,
-                confirmation: .confirm
+                confirmation: .logged
             ),
         ]
     }

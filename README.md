@@ -2,16 +2,16 @@
 
 An open protocol and runtime for permissioned AI agent interaction with desktop environments.
 
-Rescreen provides a macOS broker daemon that mediates all agent-to-OS interaction through capability-based permissions, exposed over the [Model Context Protocol (MCP)](https://modelcontextprotocol.io). Agents can perceive UI state, perform actions, access the filesystem, and more — all within explicit permission boundaries.
+Rescreen provides a macOS broker daemon that mediates all agent-to-OS interaction through capability-based permissions, exposed over the [Model Context Protocol (MCP)](https://modelcontextprotocol.io). Agents can perceive UI state, take actions, capture screenshots, and more — all within explicit permission boundaries.
 
 ## Why Rescreen?
 
-AI agents that interact with desktop applications need a structured, secure interface. Without one, agents either get unrestricted access (dangerous) or no access at all (useless). Rescreen sits in between:
+AI agents can read files and run code, but they can't see or interact with the apps on your screen. Rescreen bridges that gap:
 
-- **Permissioned** — Capability grants control exactly what an agent can see and do
-- **Auditable** — Every operation is logged with session context
-- **Confirmable** — Destructive actions can require user approval via native macOS dialogs
-- **Standard** — Uses MCP, so any MCP-compatible client can connect
+- **Permissioned** — You decide which apps the agent can see and interact with
+- **Auditable** — Every operation is logged
+- **Standard** — Uses MCP, so any MCP-compatible client can connect (Claude, Cursor, etc.)
+- **Secure** — Capability grants, z-order occlusion detection, path traversal protection, timing side-channel mitigation
 
 ## Architecture
 
@@ -22,12 +22,11 @@ AI agents that interact with desktop applications need a structured, secure inte
 └──────────────┘                     │  ┌────────────────┐  │                      └─────────────┘
                                      │  │ Capability Store│  │
                                      │  │ Audit Logger    │  │
-                                     │  │ Confirmation UI │  │
                                      │  └────────────────┘  │
                                      └──────────────────────┘
 ```
 
-The broker runs as a local process. Agents communicate over stdin/stdout using JSON-RPC 2.0 (MCP transport). The broker translates MCP tool calls into macOS accessibility API calls, input synthesis, screenshots, and filesystem operations — all gated by the capability system.
+The broker translates MCP tool calls into macOS accessibility API calls, input synthesis, screenshots, and filesystem operations — all gated by capability grants.
 
 ## Requirements
 
@@ -40,77 +39,99 @@ The broker runs as a local process. Agents communicate over stdin/stdout using J
 ```bash
 git clone https://github.com/ygwyg/rescreen.git
 cd rescreen
-make install
-```
-
-This builds a release binary and installs it to `/usr/local/bin/rescreen`. To customize the install location:
-
-```bash
 make install PREFIX=~/.local
 ```
+
+This builds a release binary and installs it to `~/.local/bin/rescreen`. Make sure `~/.local/bin` is in your `PATH`.
 
 To uninstall:
 
 ```bash
-make uninstall
+make uninstall PREFIX=~/.local
 ```
 
 ### Granting Accessibility Permission
 
-The broker requires macOS accessibility permission:
-
 1. Open **System Settings > Privacy & Security > Accessibility**
-2. Add and enable the terminal app you're running the broker from (e.g., Terminal.app, iTerm2, or your IDE's terminal)
+2. Add and enable the terminal app you're running the broker from (e.g., Terminal.app, iTerm2)
 3. Re-run the broker
 
 ## Quick Start
 
-```bash
-# Find bundle IDs for your running apps
-rescreen --list-apps
+The fastest way to try Rescreen is with Claude Code:
 
-# Run with a target app
-rescreen --app com.apple.finder
-
-# Run with a permission profile
-rescreen --profile coding
-
-# Run with filesystem access
-rescreen --app com.google.Chrome --fs-allow ~/Documents
-
-# Use terminal-based confirmation instead of native dialogs
-rescreen --app com.apple.finder --tty
-```
-
-On first run, the broker creates `~/.rescreen/profiles/` with example profiles and `~/.rescreen/logs/` for audit logs.
-
-### Finding Bundle IDs
-
-Use `--list-apps` to see all running GUI applications and their bundle IDs:
+**1. Find the app you want to give the agent access to:**
 
 ```
 $ rescreen --list-apps
-Running applications:
-
-  Calculator        com.apple.calculator
   Chrome            com.google.Chrome
-  Finder            com.apple.finder
   Slack             com.tinyspeck.slackmacgap
-  Terminal          com.apple.Terminal
-  VS Code           com.microsoft.VSCode
-
-Use --app <bundle-id> to permit an application.
+  Finder            com.apple.finder
+  ...
 ```
 
-You can also find a bundle ID for any `.app`:
+**2. Add Rescreen as an MCP server.** Create `.mcp.json` in your project (or `~/.mcp.json` globally):
 
-```bash
-mdls -name kMDItemCFBundleIdentifier /Applications/Safari.app
+```json
+{
+  "mcpServers": {
+    "rescreen": {
+      "command": "rescreen",
+      "args": ["--app", "com.google.Chrome"]
+    }
+  }
+}
 ```
 
-## Connecting to MCP Clients
+**3. Ask Claude to interact with the app:**
 
-Rescreen is an MCP server that communicates over stdio. Any MCP-compatible client can connect to it.
+> "What tabs do I have open in Chrome?"
+> "Click on the Slack tab"
+> "Take a screenshot of Chrome"
+> "Find the search box and type 'hello world'"
+
+The agent can now perceive and interact with Chrome. Claude Code's built-in tool approval handles confirmation — you approve each action in the chat, not via a separate dialog.
+
+### Multiple Apps
+
+```json
+{
+  "mcpServers": {
+    "rescreen": {
+      "command": "rescreen",
+      "args": ["--app", "com.google.Chrome", "--app", "com.tinyspeck.slackmacgap"]
+    }
+  }
+}
+```
+
+### With Filesystem Access
+
+```json
+{
+  "mcpServers": {
+    "rescreen": {
+      "command": "rescreen",
+      "args": ["--app", "com.google.Chrome", "--fs-allow", "/Users/you/Documents"]
+    }
+  }
+}
+```
+
+### Using a Profile
+
+```json
+{
+  "mcpServers": {
+    "rescreen": {
+      "command": "rescreen",
+      "args": ["--profile", "coding"]
+    }
+  }
+}
+```
+
+## Other MCP Clients
 
 ### Claude Desktop
 
@@ -121,20 +142,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
   "mcpServers": {
     "rescreen": {
       "command": "rescreen",
-      "args": ["--app", "com.apple.finder"]
-    }
-  }
-}
-```
-
-With a profile and filesystem access:
-
-```json
-{
-  "mcpServers": {
-    "rescreen": {
-      "command": "rescreen",
-      "args": ["--profile", "coding", "--fs-allow", "/Users/you/Projects"]
+      "args": ["--app", "com.google.Chrome"]
     }
   }
 }
@@ -142,46 +150,62 @@ With a profile and filesystem access:
 
 ### Cursor
 
-Add to Cursor's MCP settings (Settings > MCP Servers > Add):
+Add via Settings > MCP Servers > Add:
 
 ```json
 {
   "mcpServers": {
     "rescreen": {
       "command": "rescreen",
-      "args": ["--app", "com.google.Chrome", "--app", "com.apple.finder"]
+      "args": ["--app", "com.google.Chrome"]
     }
   }
 }
 ```
 
-### Claude Code
+### Any MCP Client
 
-Add to your project's `.mcp.json`:
+The broker reads JSON-RPC 2.0 from stdin and writes responses to stdout. All logging goes to stderr. Any MCP client that supports stdio transport can connect.
 
-```json
-{
-  "mcpServers": {
-    "rescreen": {
-      "command": "rescreen",
-      "args": ["--app", "com.google.Chrome", "--tty"]
-    }
-  }
-}
+## CLI Reference
+
+```
+rescreen [options]
+
+Options:
+  --app <bundle-id>     Add a permitted app (can be repeated)
+  --profile <name>      Load a permission profile from ~/.rescreen/profiles/
+  --fs-allow <path>     Allow filesystem access to path (can be repeated)
+  --confirm             Enable native macOS confirmation dialogs (NSPanel)
+  --confirm-tty         Enable terminal-based confirmation
+  --list-apps           List running applications with their bundle IDs
+  --version             Show version
+  --help                Show this help
 ```
 
-### Generic MCP Client
+By default, actions execute immediately within the granted scope. The MCP client (Claude Code, Cursor, etc.) handles user confirmation at the chat level. Use `--confirm` or `--confirm-tty` only if you want an additional broker-level confirmation step.
 
-Any MCP client that supports stdio transport can connect. The broker reads JSON-RPC 2.0 from stdin and writes responses to stdout. All logging goes to stderr.
+### Finding Bundle IDs
+
+```
+$ rescreen --list-apps
+Running applications:
+
+  Chrome            com.google.Chrome
+  Finder            com.apple.finder
+  Slack             com.tinyspeck.slackmacgap
+  VS Code           com.microsoft.VSCode
+
+Use --app <bundle-id> to permit an application.
+```
+
+Or for any `.app`:
 
 ```bash
-# Start the broker and pipe MCP messages
-echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' | rescreen --app com.apple.finder --tty
+mdls -name kMDItemCFBundleIdentifier /Applications/Safari.app
 ```
 
 ## MCP Tools
-
-The broker exposes these tools to MCP clients:
 
 ### `rescreen_perceive`
 
@@ -196,11 +220,10 @@ Capture UI state from a target application.
 | `query` | string | Search query for `find` type |
 | `role` | string | Filter by role for `find` type |
 
-**Perception types:**
-- **`accessibility`** — Returns the accessibility tree as a flat list of normalized UI elements with ARIA-derived roles, bounds, states, and values
-- **`screenshot`** — Returns a PNG screenshot of the app's windows as base64-encoded image content
-- **`composite`** — Returns both screenshot and accessibility tree in a single call
-- **`find`** — Searches the accessibility tree by text query and/or role filter
+- **`accessibility`** — Structured UI tree with ARIA-derived roles, bounds, states, values
+- **`screenshot`** — PNG screenshot as base64-encoded image content
+- **`composite`** — Both screenshot and accessibility tree in one call
+- **`find`** — Search the accessibility tree by text query and/or role
 
 ### `rescreen_act`
 
@@ -208,158 +231,80 @@ Perform actions on a target application.
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `app` | string | **Required.** Bundle ID of the target app |
-| `action` | string | **Required.** Action type (see below) |
-| `element` | string | Element ID from a prior perceive call (e.g., `e42`) |
-| `value` | string | Text for `type`, key combo for `press`, text for `clipboard_write` |
-| `x`, `y` | number | Screen coordinates (alternative to element ID) |
-| `from`, `to` | object | Start/end points for `drag` (`{x, y}`) |
-| `duration` | number | Drag duration in seconds (default 0.3) |
+| `app` | string | **Required.** Bundle ID |
+| `action` | string | **Required.** Action type |
+| `element` | string | Element ID from perceive (e.g., `e42`) |
+| `value` | string | Text for `type`, key combo for `press` |
+| `x`, `y` | number | Screen coordinates (fallback) |
+| `from`, `to` | object | Drag start/end `{x, y}` |
 
-**Action types:**
-
-| Action | Domain | Description |
-|--------|--------|-------------|
-| `click` | `action.input.mouse` | Left click on element or coordinates |
-| `double_click` | `action.input.mouse` | Double-click |
-| `right_click` | `action.input.mouse` | Right-click (context menu) |
-| `hover` | `action.input.mouse` | Move cursor to element/position |
-| `drag` | `action.input.mouse` | Drag from one point to another |
-| `scroll` | `action.input.mouse` | Scroll at element/position |
-| `type` | `action.input.keyboard` | Type text string (max 10,000 chars) |
-| `press` | `action.input.keyboard` | Press key combination (e.g., `cmd+s`) |
-| `select` | `action.input.select` | Select an element |
-| `focus` | `action.app.focus` | Bring app to foreground |
-| `launch` | `action.app.launch` | Launch an application |
-| `close` | `action.app.close` | Terminate an application |
-| `clipboard_read` | `action.clipboard.read` | Read system clipboard |
-| `clipboard_write` | `action.clipboard.write` | Write to system clipboard |
-| `url` | `perception.accessibility` | Get current URL from browser |
+**Actions:** `click`, `double_click`, `right_click`, `hover`, `drag`, `scroll`, `type`, `press`, `select`, `focus`, `launch`, `close`, `clipboard_read`, `clipboard_write`, `url`
 
 ### `rescreen_overview`
 
-List all running applications with window information. No parameters required.
+List all running applications with window info.
 
 ### `rescreen_status`
 
-Get session information and active capability grants. No parameters required.
+Get session info and active capability grants.
 
 ### `rescreen_filesystem`
 
-Scoped filesystem operations (only available when `--fs-allow` paths are configured).
+Scoped filesystem operations (requires `--fs-allow`).
 
 | Parameter | Type | Description |
 |-----------|------|-------------|
-| `operation` | string | **Required.** `read`, `write`, `list`, `delete`, `metadata`, `search` |
-| `path` | string | **Required.** Target file/directory path |
-| `content` | string | File content for `write` |
-| `recursive` | bool | Recursive listing for `list` |
-| `query` | string | Search term for `search` |
+| `operation` | string | `read`, `write`, `list`, `delete`, `metadata`, `search` |
+| `path` | string | Target path |
+| `content` | string | Content for `write` |
+| `recursive` | bool | Recursive `list` |
+| `query` | string | Search term |
 
-## Permission System
+## Permission Profiles
 
-### Capability Grants
+Create YAML profiles in `~/.rescreen/profiles/` for reusable permission sets.
 
-Every operation requires a matching capability grant. Grants are tuples of:
+Example profiles are created on first run:
 
-- **Domain** — What category of operation (e.g., `perception.accessibility`, `action.input.mouse`)
-- **Target** — What app/resource it applies to (bundle ID, paths, URL filters)
-- **Confirmation tier** — How the operation is gated:
-  - `silent` — No prompt, logged only
-  - `logged` — No prompt, logged and reviewable
-  - `confirm` — Requires user confirmation via native dialog
-  - `escalate` — Requires new capability grant
-  - `block` — Hard denied, no override
-
-### Default Grants (--app flag)
-
-When using `--app`, the broker creates default grants:
-- `perception.*` — Silent (no confirmation needed)
-- `action.input.*` — Requires confirmation
-- `action.app.*` — Requires confirmation
-- `action.clipboard.*` — Requires confirmation
-
-### Permission Profiles
-
-For fine-grained control, create YAML profiles in `~/.rescreen/profiles/`. The broker ships with three example profiles:
-
-**`example`** — Basic Finder access with confirmed actions:
-
-```yaml
-name: "Example Assistant"
-capabilities:
-  - domain: perception.*
-    target: { app: "com.apple.finder" }
-    confirmation: silent
-  - domain: action.input.*
-    target: { app: "com.apple.finder" }
-    confirmation: confirm
-```
-
-**`coding`** — AI pair programmer with IDE + browser perception:
+**`coding`** — IDE + browser for pair programming:
 
 ```yaml
 name: "Coding Assistant"
+description: "AI pair programmer with IDE, browser, and project filesystem access"
 capabilities:
   - domain: perception.*
     target: { app: "com.microsoft.VSCode" }
     confirmation: silent
   - domain: action.input.*
     target: { app: "com.microsoft.VSCode" }
-    confirmation: confirm
+    confirmation: logged
   - domain: perception.*
     target: { app: "com.google.Chrome" }
     confirmation: silent
 ```
 
-**`browser-research`** — Read-only browser access for web research:
+**`browser-research`** — Read-only browser access:
 
 ```yaml
 name: "Browser Research"
+description: "Read-only browser access for web research"
 capabilities:
   - domain: perception.*
     target: { app: "com.google.Chrome" }
     confirmation: silent
-  - domain: perception.*
-    target: { app: "com.apple.Safari" }
-    confirmation: silent
   - domain: action.input.mouse
     target: { app: "com.google.Chrome" }
-    confirmation: confirm
+    confirmation: logged
 ```
-
-Load a profile with `rescreen --profile coding`. Create your own by adding `.yaml` files to `~/.rescreen/profiles/`.
 
 ## Security
 
-### Confirmation Dialogs
-
-Actions requiring confirmation present a native macOS dialog (NSPanel) showing the operation details. The agent cannot proceed without user approval. Use `--tty` for terminal-based confirmation in headless environments.
-
-### Z-Order Occlusion Detection
-
-Before executing visual actions (click, type, scroll, etc.), the broker checks whether unpermitted windows are overlapping the target app's windows. If detected, the action is blocked with an occlusion warning. This prevents attacks where a malicious window is placed over a permitted app to intercept agent actions.
-
-### File Picker Interception
-
-When a file picker dialog (Open/Save) is detected in a permitted app, the broker validates that the selected path is within the allowed filesystem scope before permitting the click on Open/Save buttons.
-
-### Timing Side-Channel Mitigation
-
-Denied requests are padded to a minimum 5ms response time to prevent agents from probing resource existence through response timing differences.
-
-### Path Traversal Protection
-
-All filesystem paths are canonicalized (tilde expansion, symlink resolution, `..` resolution) and validated against allowed path prefixes with directory boundary checking.
-
-### Audit Logging
-
-Every operation is logged to `~/.rescreen/logs/` as JSON lines with:
-- Timestamp, session ID
-- Operation type and target
-- Capability used
-- Result (allowed/denied)
-- Confirmation tier applied
+- **Capability grants** — Every operation requires a matching grant. Grants specify domain, target app, and confirmation tier (`silent`, `logged`, `confirm`, `block`).
+- **Z-order occlusion** — Visual actions are blocked if unpermitted windows overlap the target app, preventing spoofing attacks.
+- **File picker interception** — Validates selected paths against allowed scope before permitting Open/Save clicks.
+- **Timing normalization** — Denied requests are padded to 5ms minimum to prevent resource existence probing.
+- **Path traversal protection** — All paths canonicalized with symlink resolution and boundary checking.
+- **Audit logging** — Every operation logged to `~/.rescreen/logs/` as JSON lines.
 
 ## Testing
 
@@ -367,62 +312,7 @@ Every operation is logged to `~/.rescreen/logs/` as JSON lines with:
 make test
 ```
 
-The test suite covers:
-- Path validation and traversal protection
-- Capability grant matching and wildcard domains
-- Grant lifecycle (expiration, revocation, one-shot)
-- Confirmation tier enforcement
-- Action-to-domain mapping
-- Accessibility role normalization
-- Node model serialization
-- JSON-RPC request/response building
-- Timing normalization
-
-## Project Structure
-
-```
-Sources/RescreenBroker/
-├── RescreenApp.swift              # Entry point, CLI argument parsing
-├── Accessibility/
-│   ├── AXNodeModel.swift          # Normalized UI element representation
-│   ├── AXTreeCache.swift          # Thread-safe tree caching
-│   ├── AXTreeCapture.swift        # Recursive AX tree walker
-│   └── RoleMapping.swift          # AXRole → ARIA role normalization
-├── Actions/
-│   └── InputSynthesizer.swift     # CGEvent-based input synthesis
-├── Audit/
-│   └── AuditLogger.swift          # Structured JSON audit logging
-├── Capability/
-│   ├── ActionDomainMapping.swift   # Action type → domain mapping
-│   ├── CapabilityGrant.swift       # Grant data structures
-│   ├── CapabilityStore.swift       # Permission enforcement engine
-│   └── SessionManager.swift        # Session lifecycle
-├── Confirmation/
-│   ├── ConfirmationHandler.swift   # Confirmation protocol
-│   └── ConfirmationPanel.swift     # Native macOS NSPanel implementation
-├── Filesystem/
-│   ├── FilesystemHandler.swift     # Scoped filesystem operations
-│   └── PathValidator.swift         # Path canonicalization and validation
-├── MCP/
-│   ├── JSONRPCTransport.swift      # Stdio JSON-RPC 2.0 transport
-│   ├── MCPServer.swift             # MCP protocol handler
-│   ├── MCPTypes.swift              # Request/response types
-│   └── TimingNormalizer.swift      # Timing side-channel mitigation
-├── Platform/
-│   ├── AppResolver.swift           # Bundle ID → AXUIElement resolution
-│   ├── ClipboardManager.swift      # System clipboard access
-│   ├── FilePickerMonitor.swift     # Open/Save dialog interception
-│   ├── ScreenCapture.swift         # CGWindowListCreateImage capture
-│   ├── URLMonitor.swift            # Browser URL extraction
-│   ├── WindowManager.swift         # Window enumeration
-│   └── ZOrderMonitor.swift         # Occlusion detection
-├── Profile/
-│   └── ProfileLoader.swift         # YAML profile loading
-└── Protocol/
-    ├── ActHandler.swift             # Action tool handler
-    ├── PerceiveHandler.swift        # Perception tool handler
-    └── StatusHandler.swift          # Status tool handler
-```
+101 tests covering path validation, capability grants, wildcard matching, role normalization, JSON-RPC, timing normalization, and more.
 
 ## License
 

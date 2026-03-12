@@ -23,7 +23,7 @@ struct RescreenApp {
 
         var targetBundleIDs: [String] = []
         var profileName: String? = nil
-        var useGUI = true // Use NSPanel confirmation by default
+        var confirmMode: ConfirmMode = .none
         var fsAllowPaths: [String] = []
 
         let args = CommandLine.arguments
@@ -39,8 +39,13 @@ struct RescreenApp {
             case "--fs-allow":
                 i += 1
                 if i < args.count { fsAllowPaths.append(args[i]) }
+            case "--confirm":
+                confirmMode = .gui
+            case "--confirm-tty":
+                confirmMode = .tty
             case "--tty":
-                useGUI = false
+                // Legacy alias for --confirm-tty
+                confirmMode = .tty
             case "--list-apps":
                 listRunningApps()
                 exit(0)
@@ -51,22 +56,33 @@ struct RescreenApp {
                 FileHandle.standardError.write("""
                     Rescreen Broker v0.4.0
 
-                    Usage: RescreenBroker [options]
+                    Usage: rescreen [options]
 
                     Options:
                       --app <bundle-id>     Add a permitted app (can be repeated)
                       --profile <name>      Load a permission profile from ~/.rescreen/profiles/
                       --fs-allow <path>     Allow filesystem access to path (can be repeated)
-                      --tty                 Use terminal confirmation instead of native dialog
+                      --confirm             Enable native macOS confirmation dialogs
+                      --confirm-tty         Enable terminal-based confirmation
                       --list-apps           List running applications with their bundle IDs
                       --version             Show version
                       --help                Show this help
 
                     Examples:
-                      RescreenBroker --app com.apple.finder
-                      RescreenBroker --profile coding-assistant
-                      RescreenBroker --app com.google.Chrome --fs-allow ~/Documents
-                      RescreenBroker --app com.apple.finder --fs-allow /tmp --fs-allow ~/Desktop
+                      rescreen --app com.apple.finder
+                      rescreen --profile coding
+                      rescreen --app com.google.Chrome --fs-allow ~/Documents
+                      rescreen --app com.google.Chrome --app com.tinyspeck.slackmacgap
+
+                    MCP client configuration (Claude Code .mcp.json):
+                      {
+                        "mcpServers": {
+                          "rescreen": {
+                            "command": "rescreen",
+                            "args": ["--app", "com.google.Chrome"]
+                          }
+                        }
+                      }
 
                     """.data(using: .utf8)!)
                 exit(0)
@@ -111,17 +127,18 @@ struct RescreenApp {
             exit(1)
         }
 
-        // MARK: - Set up confirmation handler
+        // MARK: - Set up confirmation handler (optional)
 
-        let confirmationHandler: ConfirmationHandler
-        if useGUI {
-            confirmationHandler = NSPanelConfirmationHandler()
-            Log.info("Using native macOS confirmation dialog")
-        } else {
-            confirmationHandler = TTYConfirmationHandler()
-            Log.info("Using TTY confirmation (--tty mode)")
+        switch confirmMode {
+        case .gui:
+            capabilityStore.confirmationHandler = NSPanelConfirmationHandler()
+            Log.info("Confirmation mode: native macOS dialog")
+        case .tty:
+            capabilityStore.confirmationHandler = TTYConfirmationHandler()
+            Log.info("Confirmation mode: terminal")
+        case .none:
+            Log.info("Confirmation mode: none (actions execute within granted scope)")
         }
-        capabilityStore.confirmationHandler = confirmationHandler
 
         // MARK: - Initialize remaining components
 
@@ -196,9 +213,9 @@ struct RescreenApp {
 
         // MARK: - Run
 
-        if useGUI {
+        if confirmMode == .gui {
             // GUI mode: main thread runs AppKit run loop, MCP I/O on background thread.
-            // This is required for NSPanel confirmation dialogs to function.
+            // Required for NSPanel confirmation dialogs to function.
             let mcpThread = Thread {
                 mcpServer.run()
                 DispatchQueue.main.async {
@@ -212,9 +229,17 @@ struct RescreenApp {
             app.setActivationPolicy(.accessory) // No dock icon
             app.run()
         } else {
-            // TTY mode: synchronous stdin loop on main thread (M1 behavior).
+            // Default: synchronous stdin loop on main thread.
             mcpServer.run()
         }
+    }
+
+    // MARK: - Confirmation mode
+
+    enum ConfirmMode: Equatable {
+        case none   // No confirmation UI — actions execute within granted scope
+        case gui    // Native macOS NSPanel confirmation dialogs
+        case tty    // Terminal-based confirmation via /dev/tty
     }
 
     /// List all running GUI applications with their bundle IDs.
