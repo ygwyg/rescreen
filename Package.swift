@@ -21,5 +21,13 @@ let package = Package(
                 .linkedFramework("ImageIO"),
             ]
         ),
+        .testTarget(
+            name: "RescreenBrokerTests",
+            dependencies: ["RescreenBroker"],
+            path: "Tests/RescreenBrokerTests",
+            linkerSettings: [
+                .linkedFramework("ApplicationServices"),
+            ]
+        ),
     ]
 )
