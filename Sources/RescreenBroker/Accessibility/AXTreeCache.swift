@@ -2,32 +2,30 @@ import ApplicationServices
 import Foundation
 
 /// Caches the mapping from element IDs (e.g., "e137") to AXUIElement references
-/// from the most recent perceive call. This ensures that act() targets the same
-/// element the agent saw in the perceive results.
+/// from perceive calls. Maintains separate caches per app so multi-app workflows
+/// don't invalidate each other's element references.
 final class AXTreeCache {
-    /// Cached element references keyed by their assigned ID.
-    private var elements: [String: AXUIElement] = [:]
-    private var cachedBundleID: String = ""
+    /// Per-app element caches. Each app's perceive overwrites only its own cache.
+    private var appCaches: [String: [String: AXUIElement]] = [:]
     private let lock = NSLock()
 
-    /// Store elements from a tree capture.
+    /// Store elements from a tree capture for a specific app.
     func store(bundleID: String, elements: [(id: String, element: AXUIElement)]) {
         lock.lock()
         defer { lock.unlock() }
-        self.cachedBundleID = bundleID
-        self.elements = Dictionary(uniqueKeysWithValues: elements)
+        appCaches[bundleID] = Dictionary(uniqueKeysWithValues: elements)
         Log.debug("Cached \(elements.count) elements for \(bundleID)")
     }
 
-    /// Look up an AXUIElement by its assigned ID.
+    /// Look up an AXUIElement by its assigned ID within an app's cache.
     func resolve(id: String, bundleID: String) -> AXUIElement? {
         lock.lock()
         defer { lock.unlock() }
-        guard self.cachedBundleID == bundleID else {
-            Log.debug("Cache miss: cached app is \(self.cachedBundleID), requested \(bundleID)")
+        guard let cache = appCaches[bundleID] else {
+            Log.debug("Cache miss: no cache for \(bundleID)")
             return nil
         }
-        return elements[id]
+        return cache[id]
     }
 
     /// Get the role and name of a cached element for confirmation prompts.
@@ -55,11 +53,14 @@ final class AXTreeCache {
         return (role, name)
     }
 
-    /// Clear the cache.
-    func clear() {
+    /// Clear the cache for a specific app, or all apps if bundleID is nil.
+    func clear(bundleID: String? = nil) {
         lock.lock()
         defer { lock.unlock() }
-        elements.removeAll()
-        cachedBundleID = ""
+        if let bundleID = bundleID {
+            appCaches.removeValue(forKey: bundleID)
+        } else {
+            appCaches.removeAll()
+        }
     }
 }

@@ -66,7 +66,13 @@ final class ActHandler {
         // Non-visual actions (clipboard, url, focus, launch, close) are not affected.
         let visualActions: Set<String> = ["click", "double_click", "right_click", "hover", "drag", "type", "press", "scroll", "select"]
         if visualActions.contains(type), let monitor = zOrderMonitor {
-            let occlusion = monitor.checkOcclusion(forPID: pid)
+            var occlusion = monitor.checkOcclusion(forPID: pid)
+            if occlusion.isOccluded {
+                // Auto-focus: bring target app to front and retry once
+                resolved.app.activate()
+                Thread.sleep(forTimeInterval: 0.3)
+                occlusion = monitor.checkOcclusion(forPID: pid)
+            }
             if occlusion.isOccluded {
                 let desc = monitor.describeOcclusion(occlusion)
                 auditLogger.log(
@@ -208,6 +214,7 @@ final class ActHandler {
             return errorResult("Element \(elementID) not found. Run rescreen_perceive first.")
         }
 
+        // Try AX actions first (most reliable for standard UI controls)
         var result = AXUIElementPerformAction(element, kAXPressAction as CFString)
         if result == .success {
             return textResult("Executed: \(detail)")
@@ -223,7 +230,28 @@ final class ActHandler {
             return textResult("Executed: \(detail)")
         }
 
-        return errorResult("Failed to interact with \(elementID) (AX error: \(result.rawValue)). Try clicking by position.")
+        // Fallback: resolve element center and click by coordinate
+        var posValue: AnyObject?
+        var sizeValue: AnyObject?
+        if AXUIElementCopyAttributeValue(element, kAXPositionAttribute as CFString, &posValue) == .success,
+           AXUIElementCopyAttributeValue(element, kAXSizeAttribute as CFString, &sizeValue) == .success,
+           let posVal = posValue, CFGetTypeID(posVal) == AXValueGetTypeID(),
+           let sizeVal = sizeValue, CFGetTypeID(sizeVal) == AXValueGetTypeID()
+        {
+            var position = CGPoint.zero
+            var size = CGSize.zero
+            AXValueGetValue(posVal as! AXValue, .cgPoint, &position)
+            AXValueGetValue(sizeVal as! AXValue, .cgSize, &size)
+            let center = CGPoint(x: position.x + size.width / 2, y: position.y + size.height / 2)
+
+            Log.debug("AX actions failed for \(elementID), falling back to coordinate click at \(center)")
+            let clickSuccess = inputSynthesizer.click(at: center)
+            if clickSuccess {
+                return textResult("Executed: \(detail) (via coordinate fallback)")
+            }
+        }
+
+        return errorResult("Failed to interact with \(elementID) (AX error: \(result.rawValue))")
     }
 
     private func handleType(arguments: [String: Any], pid: Int32, bundleID: String, appName: String) -> [String: Any] {

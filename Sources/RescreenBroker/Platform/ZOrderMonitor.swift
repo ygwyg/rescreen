@@ -62,6 +62,10 @@ final class ZOrderMonitor {
                 // Skip windows at negative layers (desktop elements)
                 if window.layer < 0 { continue }
 
+                // Skip system-level processes (menu bar, dock, compositor, notch fill)
+                let systemOwners: Set<String> = ["Window Server", "WindowManager", "Dock", "Control Center", "SystemUIServer", "Notification Center"]
+                if systemOwners.contains(window.ownerName) { continue }
+
                 // Check if this window overlaps the target
                 let overlap = targetWindow.bounds.intersection(window.bounds)
                 if !overlap.isNull && overlap.width > 5 && overlap.height > 5 {
