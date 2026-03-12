@@ -69,7 +69,7 @@ final class ProfileLoader {
         let fm = FileManager.default
         if !fm.fileExists(atPath: profileDir) {
             try? fm.createDirectory(atPath: profileDir, withIntermediateDirectories: true)
-            writeExampleProfile()
+            writeExampleProfiles()
             Log.info("Created profiles directory: \(profileDir)")
         }
     }
@@ -127,19 +127,42 @@ final class ProfileLoader {
         return NSString(string: path).expandingTildeInPath
     }
 
-    private func writeExampleProfile() {
+    private func writeExampleProfiles() {
         let example = """
-        # Rescreen Permission Profile
-        # Place this file in ~/.rescreen/profiles/
+        # Rescreen Permission Profile — Example
+        # Place profiles in ~/.rescreen/profiles/
+        # Load with: rescreen --profile example
 
         name: "Example Assistant"
         description: "Example profile — customize for your workflow"
         capabilities:
           - domain: perception.accessibility
-            target: { app: "com.microsoft.VSCode" }
+            target: { app: "com.apple.finder" }
             confirmation: silent
 
           - domain: perception.screenshot
+            target: { app: "com.apple.finder" }
+            confirmation: silent
+
+          - domain: action.input.*
+            target: { app: "com.apple.finder" }
+            confirmation: confirm
+
+          - domain: action.app.*
+            target: { app: "com.apple.finder" }
+            confirmation: confirm
+        """
+        try? example.write(toFile: "\(profileDir)/example.yaml", atomically: true, encoding: .utf8)
+
+        let coding = """
+        # Coding assistant — IDE + browser + filesystem
+        # Load with: rescreen --profile coding
+
+        name: "Coding Assistant"
+        description: "AI pair programmer with IDE, browser, and project filesystem access"
+        capabilities:
+          # VS Code: full perception, confirmed actions
+          - domain: perception.*
             target: { app: "com.microsoft.VSCode" }
             confirmation: silent
 
@@ -147,12 +170,51 @@ final class ProfileLoader {
             target: { app: "com.microsoft.VSCode" }
             confirmation: confirm
 
-          - domain: fs.read
-            target: { paths: ["~/Documents/**"] }
+          - domain: action.app.focus
+            target: { app: "com.microsoft.VSCode" }
+            confirmation: silent
+
+          # Browser: read-only perception for docs/reference
+          - domain: perception.*
+            target: { app: "com.google.Chrome" }
+            confirmation: silent
+
+          # Clipboard: confirmed access
+          - domain: action.clipboard.*
+            target: { app: "com.microsoft.VSCode" }
+            confirmation: confirm
+        """
+        try? coding.write(toFile: "\(profileDir)/coding.yaml", atomically: true, encoding: .utf8)
+
+        let browser = """
+        # Browser research — read-only web browsing
+        # Load with: rescreen --profile browser-research
+
+        name: "Browser Research"
+        description: "Read-only browser access for web research"
+        capabilities:
+          - domain: perception.*
+            target: { app: "com.google.Chrome" }
+            confirmation: silent
+
+          - domain: perception.*
+            target: { app: "com.apple.Safari" }
+            confirmation: silent
+
+          # Scroll and navigate (confirmed)
+          - domain: action.input.mouse
+            target: { app: "com.google.Chrome" }
+            confirmation: confirm
+
+          - domain: action.input.mouse
+            target: { app: "com.apple.Safari" }
+            confirmation: confirm
+
+          # Read URLs
+          - domain: action.clipboard.read
+            target: { app: "com.google.Chrome" }
             confirmation: silent
         """
-
-        let path = "\(profileDir)/example.yaml"
-        try? example.write(toFile: path, atomically: true, encoding: .utf8)
+        try? browser.write(toFile: "\(profileDir)/browser-research.yaml", atomically: true, encoding: .utf8)
     }
 }

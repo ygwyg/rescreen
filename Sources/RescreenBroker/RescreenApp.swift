@@ -41,6 +41,12 @@ struct RescreenApp {
                 if i < args.count { fsAllowPaths.append(args[i]) }
             case "--tty":
                 useGUI = false
+            case "--list-apps":
+                listRunningApps()
+                exit(0)
+            case "--version":
+                FileHandle.standardError.write("rescreen 0.4.0\n".data(using: .utf8)!)
+                exit(0)
             case "--help":
                 FileHandle.standardError.write("""
                     Rescreen Broker v0.4.0
@@ -52,6 +58,8 @@ struct RescreenApp {
                       --profile <name>      Load a permission profile from ~/.rescreen/profiles/
                       --fs-allow <path>     Allow filesystem access to path (can be repeated)
                       --tty                 Use terminal confirmation instead of native dialog
+                      --list-apps           List running applications with their bundle IDs
+                      --version             Show version
                       --help                Show this help
 
                     Examples:
@@ -207,5 +215,23 @@ struct RescreenApp {
             // TTY mode: synchronous stdin loop on main thread (M1 behavior).
             mcpServer.run()
         }
+    }
+
+    /// List all running GUI applications with their bundle IDs.
+    private static func listRunningApps() {
+        let apps = NSWorkspace.shared.runningApplications
+            .filter { $0.activationPolicy == .regular && $0.bundleIdentifier != nil }
+            .sorted { ($0.localizedName ?? "") < ($1.localizedName ?? "") }
+
+        let maxNameLen = apps.map { ($0.localizedName ?? "").count }.max() ?? 20
+
+        FileHandle.standardError.write("Running applications:\n\n".data(using: .utf8)!)
+        for app in apps {
+            let name = app.localizedName ?? "Unknown"
+            let bundleID = app.bundleIdentifier ?? "unknown"
+            let padding = String(repeating: " ", count: max(1, maxNameLen - name.count + 2))
+            FileHandle.standardError.write("  \(name)\(padding)\(bundleID)\n".data(using: .utf8)!)
+        }
+        FileHandle.standardError.write("\nUse --app <bundle-id> to permit an application.\n".data(using: .utf8)!)
     }
 }

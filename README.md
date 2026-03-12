@@ -35,34 +35,149 @@ The broker runs as a local process. Agents communicate over stdin/stdout using J
 - Swift 6.0+
 - Accessibility permission granted to the terminal app running the broker
 
-## Quick Start
+## Install
 
 ```bash
-# Build
-swift build
-
-# Run with a target app
-.build/debug/RescreenBroker --app com.apple.finder
-
-# Run with a permission profile
-.build/debug/RescreenBroker --profile my-assistant
-
-# Run with filesystem access
-.build/debug/RescreenBroker --app com.apple.finder --fs-allow ~/Documents --fs-allow /tmp
-
-# Use terminal-based confirmation instead of native dialogs
-.build/debug/RescreenBroker --app com.apple.finder --tty
+git clone https://github.com/ygwyg/rescreen.git
+cd rescreen
+make install
 ```
 
-On first run, the broker creates `~/.rescreen/profiles/` with an example profile and `~/.rescreen/logs/` for audit logs.
+This builds a release binary and installs it to `/usr/local/bin/rescreen`. To customize the install location:
+
+```bash
+make install PREFIX=~/.local
+```
+
+To uninstall:
+
+```bash
+make uninstall
+```
 
 ### Granting Accessibility Permission
 
-The broker requires macOS accessibility permission. To grant it:
+The broker requires macOS accessibility permission:
 
 1. Open **System Settings > Privacy & Security > Accessibility**
 2. Add and enable the terminal app you're running the broker from (e.g., Terminal.app, iTerm2, or your IDE's terminal)
 3. Re-run the broker
+
+## Quick Start
+
+```bash
+# Find bundle IDs for your running apps
+rescreen --list-apps
+
+# Run with a target app
+rescreen --app com.apple.finder
+
+# Run with a permission profile
+rescreen --profile coding
+
+# Run with filesystem access
+rescreen --app com.google.Chrome --fs-allow ~/Documents
+
+# Use terminal-based confirmation instead of native dialogs
+rescreen --app com.apple.finder --tty
+```
+
+On first run, the broker creates `~/.rescreen/profiles/` with example profiles and `~/.rescreen/logs/` for audit logs.
+
+### Finding Bundle IDs
+
+Use `--list-apps` to see all running GUI applications and their bundle IDs:
+
+```
+$ rescreen --list-apps
+Running applications:
+
+  Calculator        com.apple.calculator
+  Chrome            com.google.Chrome
+  Finder            com.apple.finder
+  Slack             com.tinyspeck.slackmacgap
+  Terminal          com.apple.Terminal
+  VS Code           com.microsoft.VSCode
+
+Use --app <bundle-id> to permit an application.
+```
+
+You can also find a bundle ID for any `.app`:
+
+```bash
+mdls -name kMDItemCFBundleIdentifier /Applications/Safari.app
+```
+
+## Connecting to MCP Clients
+
+Rescreen is an MCP server that communicates over stdio. Any MCP-compatible client can connect to it.
+
+### Claude Desktop
+
+Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+
+```json
+{
+  "mcpServers": {
+    "rescreen": {
+      "command": "rescreen",
+      "args": ["--app", "com.apple.finder"]
+    }
+  }
+}
+```
+
+With a profile and filesystem access:
+
+```json
+{
+  "mcpServers": {
+    "rescreen": {
+      "command": "rescreen",
+      "args": ["--profile", "coding", "--fs-allow", "/Users/you/Projects"]
+    }
+  }
+}
+```
+
+### Cursor
+
+Add to Cursor's MCP settings (Settings > MCP Servers > Add):
+
+```json
+{
+  "mcpServers": {
+    "rescreen": {
+      "command": "rescreen",
+      "args": ["--app", "com.google.Chrome", "--app", "com.apple.finder"]
+    }
+  }
+}
+```
+
+### Claude Code
+
+Add to your project's `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "rescreen": {
+      "command": "rescreen",
+      "args": ["--app", "com.google.Chrome", "--tty"]
+    }
+  }
+}
+```
+
+### Generic MCP Client
+
+Any MCP client that supports stdio transport can connect. The broker reads JSON-RPC 2.0 from stdin and writes responses to stdout. All logging goes to stderr.
+
+```bash
+# Start the broker and pipe MCP messages
+echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"test","version":"1.0"}}}' | rescreen --app com.apple.finder --tty
+```
 
 ## MCP Tools
 
@@ -166,28 +281,54 @@ When using `--app`, the broker creates default grants:
 
 ### Permission Profiles
 
-For fine-grained control, create YAML profiles in `~/.rescreen/profiles/`:
+For fine-grained control, create YAML profiles in `~/.rescreen/profiles/`. The broker ships with three example profiles:
+
+**`example`** — Basic Finder access with confirmed actions:
 
 ```yaml
-name: "My Assistant"
-description: "Scoped access for coding workflow"
+name: "Example Assistant"
 capabilities:
-  - domain: perception.accessibility
+  - domain: perception.*
+    target: { app: "com.apple.finder" }
+    confirmation: silent
+  - domain: action.input.*
+    target: { app: "com.apple.finder" }
+    confirmation: confirm
+```
+
+**`coding`** — AI pair programmer with IDE + browser perception:
+
+```yaml
+name: "Coding Assistant"
+capabilities:
+  - domain: perception.*
     target: { app: "com.microsoft.VSCode" }
     confirmation: silent
-
-  - domain: perception.screenshot
-    target: { app: "com.microsoft.VSCode" }
-    confirmation: silent
-
   - domain: action.input.*
     target: { app: "com.microsoft.VSCode" }
     confirmation: confirm
-
-  - domain: filesystem.read
-    target: { paths: ["~/Projects/**"] }
+  - domain: perception.*
+    target: { app: "com.google.Chrome" }
     confirmation: silent
 ```
+
+**`browser-research`** — Read-only browser access for web research:
+
+```yaml
+name: "Browser Research"
+capabilities:
+  - domain: perception.*
+    target: { app: "com.google.Chrome" }
+    confirmation: silent
+  - domain: perception.*
+    target: { app: "com.apple.Safari" }
+    confirmation: silent
+  - domain: action.input.mouse
+    target: { app: "com.google.Chrome" }
+    confirmation: confirm
+```
+
+Load a profile with `rescreen --profile coding`. Create your own by adding `.yaml` files to `~/.rescreen/profiles/`.
 
 ## Security
 
@@ -223,7 +364,7 @@ Every operation is logged to `~/.rescreen/logs/` as JSON lines with:
 ## Testing
 
 ```bash
-swift test
+make test
 ```
 
 The test suite covers:
@@ -285,4 +426,4 @@ Sources/RescreenBroker/
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).
