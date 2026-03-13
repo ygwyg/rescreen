@@ -1,14 +1,14 @@
-# Rescreen
+# rescreen
 
 Let AI agents see and use the apps on your Mac.
 
-Rescreen is a small program that sits between an AI agent and your desktop. The agent asks Rescreen to look at an app, click a button, or type some text, and Rescreen does it — but only for the apps you've said are OK.
+rescreen is a small program that sits between an AI agent and your desktop. The agent asks rescreen to look at an app, click a button, or type some text, and rescreen does it — but only for the apps you've said are OK.
 
 It uses [MCP](https://modelcontextprotocol.io), so it works with Claude Code, Claude Desktop, Cursor, and anything else that speaks the protocol.
 
 ## What it does
 
-You tell Rescreen which apps the agent can touch. Then the agent can:
+You tell rescreen which apps the agent can touch. Then the agent can:
 
 - See what's on screen (the UI tree, screenshots, or both)
 - Click, type, scroll, drag
@@ -43,7 +43,7 @@ $ rescreen --list-apps
   ...
 ```
 
-**2. Add Rescreen to your MCP config.** For Claude Code, create `.mcp.json` in your project:
+**2. Add rescreen to your MCP config.** For Claude Code, create `.mcp.json` in your project:
 
 ```json
 {
@@ -94,11 +94,11 @@ That's it. The agent can now see and interact with Chrome. You approve each acti
 
 For Claude Desktop, add to `~/Library/Application Support/Claude/claude_desktop_config.json`. For Cursor, add via Settings > MCP Servers. The config format is the same.
 
-Any MCP client that supports stdio transport will work. Rescreen reads JSON-RPC from stdin and writes responses to stdout.
+Any MCP client that supports stdio transport will work. rescreen reads JSON-RPC from stdin and writes responses to stdout.
 
 ## Tools
 
-Rescreen exposes five MCP tools:
+rescreen exposes five MCP tools:
 
 **`rescreen_perceive`** — Look at an app. Returns the UI tree (`accessibility`), a screenshot (`screenshot`), both (`composite`), or search results (`find`).
 
@@ -132,10 +132,10 @@ Then use it with `--profile coding`.
 
 ## Security
 
-Rescreen is designed so the agent can only do what you've allowed:
+rescreen is designed so the agent can only do what you've allowed:
 
 - Actions require a matching capability grant. No grant, no action.
-- If an unpermitted window overlaps the target app, Rescreen auto-focuses the target and logs a warning.
+- If an unpermitted window overlaps the target app, rescreen auto-focuses the target and logs a warning.
 - File paths are canonicalized with symlink resolution to prevent traversal attacks.
 - File picker clicks are validated against your allowed paths.
 - Denied requests are padded to a minimum duration to prevent timing-based probing.
