@@ -62,8 +62,8 @@ final class ActHandler {
         let pid = resolved.app.processIdentifier
         let appName = resolved.app.localizedName ?? bundleID
 
-        // Z-order occlusion check: block visual actions if unpermitted windows overlap.
-        // Non-visual actions (clipboard, url, focus, launch, close) are not affected.
+        // Z-order occlusion check: auto-focus target app if occluded, then warn (never block).
+        // Blocking on occlusion is impractical — users always have unpermitted apps open.
         let visualActions: Set<String> = ["click", "double_click", "right_click", "hover", "drag", "type", "press", "scroll", "select"]
         if visualActions.contains(type), let monitor = zOrderMonitor {
             var occlusion = monitor.checkOcclusion(forPID: pid)
@@ -75,13 +75,13 @@ final class ActHandler {
             }
             if occlusion.isOccluded {
                 let desc = monitor.describeOcclusion(occlusion)
+                Log.debug("Occlusion warning (non-blocking): \(desc)")
                 auditLogger.log(
                     operation: "act.\(type)",
                     app: bundleID,
-                    result: "blocked_occlusion",
-                    confirmation: "block"
+                    result: "occlusion_warning",
+                    confirmation: "logged"
                 )
-                return errorResult("Action blocked: \(desc)")
             }
         }
 

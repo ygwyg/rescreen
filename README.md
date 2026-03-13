@@ -1,38 +1,21 @@
 # Rescreen
 
-An open protocol and runtime for permissioned AI agent interaction with desktop environments.
+Let AI agents see and use the apps on your Mac.
 
-Rescreen provides a macOS broker daemon that mediates all agent-to-OS interaction through capability-based permissions, exposed over the [Model Context Protocol (MCP)](https://modelcontextprotocol.io). Agents can perceive UI state, take actions, capture screenshots, and more — all within explicit permission boundaries.
+Rescreen is a small program that sits between an AI agent and your desktop. The agent asks Rescreen to look at an app, click a button, or type some text, and Rescreen does it — but only for the apps you've said are OK.
 
-## Why Rescreen?
+It uses [MCP](https://modelcontextprotocol.io), so it works with Claude Code, Claude Desktop, Cursor, and anything else that speaks the protocol.
 
-AI agents can read files and run code, but they can't see or interact with the apps on your screen. Rescreen bridges that gap:
+## What it does
 
-- **Permissioned** — You decide which apps the agent can see and interact with
-- **Auditable** — Every operation is logged
-- **Standard** — Uses MCP, so any MCP-compatible client can connect (Claude, Cursor, etc.)
-- **Secure** — Capability grants, z-order occlusion detection, path traversal protection, timing side-channel mitigation
+You tell Rescreen which apps the agent can touch. Then the agent can:
 
-## Architecture
+- See what's on screen (the UI tree, screenshots, or both)
+- Click, type, scroll, drag
+- Read and write the clipboard
+- Read and write files (if you allow a folder)
 
-```
-┌──────────────┐     MCP (stdio)     ┌──────────────────────┐     AX / CGEvent     ┌─────────────┐
-│   AI Agent   │ ◄──────────────────► │   Rescreen Broker    │ ◄──────────────────► │   macOS UI  │
-│  (MCP client)│     JSON-RPC 2.0    │                      │                      │             │
-└──────────────┘                     │  ┌────────────────┐  │                      └─────────────┘
-                                     │  │ Capability Store│  │
-                                     │  │ Audit Logger    │  │
-                                     │  └────────────────┘  │
-                                     └──────────────────────┘
-```
-
-The broker translates MCP tool calls into macOS accessibility API calls, input synthesis, screenshots, and filesystem operations — all gated by capability grants.
-
-## Requirements
-
-- macOS 13+
-- Swift 6.0+
-- Accessibility permission granted to the terminal app running the broker
+Everything else is off limits. Every action gets logged.
 
 ## Install
 
@@ -42,35 +25,25 @@ cd rescreen
 make install PREFIX=~/.local
 ```
 
-This builds a release binary and installs it to `~/.local/bin/rescreen`. Make sure `~/.local/bin` is in your `PATH`.
+This puts the binary at `~/.local/bin/rescreen`. Make sure that's in your `PATH`.
 
-To uninstall:
+You also need to grant accessibility permission to whatever terminal you run it from. Go to **System Settings > Privacy & Security > Accessibility** and add your terminal app.
 
-```bash
-make uninstall PREFIX=~/.local
-```
+Requires macOS 13+ and Swift 6.0+.
 
-### Granting Accessibility Permission
+## Quick start
 
-1. Open **System Settings > Privacy & Security > Accessibility**
-2. Add and enable the terminal app you're running the broker from (e.g., Terminal.app, iTerm2)
-3. Re-run the broker
-
-## Quick Start
-
-The fastest way to try Rescreen is with Claude Code:
-
-**1. Find the app you want to give the agent access to:**
+**1. Find the bundle ID of the app you want to give the agent access to:**
 
 ```
 $ rescreen --list-apps
   Chrome            com.google.Chrome
   Slack             com.tinyspeck.slackmacgap
-  Finder            com.apple.finder
+  Figma             com.figma.Desktop
   ...
 ```
 
-**2. Add Rescreen as an MCP server.** Create `.mcp.json` in your project (or `~/.mcp.json` globally):
+**2. Add Rescreen to your MCP config.** For Claude Code, create `.mcp.json` in your project:
 
 ```json
 {
@@ -83,29 +56,28 @@ $ rescreen --list-apps
 }
 ```
 
-**3. Ask Claude to interact with the app:**
+**3. Ask the agent to do something:**
 
 > "What tabs do I have open in Chrome?"
-> "Click on the Slack tab"
+> "Click on the search box and type 'hello world'"
 > "Take a screenshot of Chrome"
-> "Find the search box and type 'hello world'"
 
-The agent can now perceive and interact with Chrome. Claude Code's built-in tool approval handles confirmation — you approve each action in the chat, not via a separate dialog.
+That's it. The agent can now see and interact with Chrome. You approve each action in the chat — there's no separate dialog.
 
-### Multiple Apps
+### Multiple apps
 
 ```json
 {
   "mcpServers": {
     "rescreen": {
       "command": "rescreen",
-      "args": ["--app", "com.google.Chrome", "--app", "com.tinyspeck.slackmacgap"]
+      "args": ["--app", "com.google.Chrome", "--app", "com.figma.Desktop"]
     }
   }
 }
 ```
 
-### With Filesystem Access
+### Filesystem access
 
 ```json
 {
@@ -118,159 +90,32 @@ The agent can now perceive and interact with Chrome. Claude Code's built-in tool
 }
 ```
 
-### Using a Profile
+## Other MCP clients
 
-```json
-{
-  "mcpServers": {
-    "rescreen": {
-      "command": "rescreen",
-      "args": ["--profile", "coding"]
-    }
-  }
-}
-```
+For Claude Desktop, add to `~/Library/Application Support/Claude/claude_desktop_config.json`. For Cursor, add via Settings > MCP Servers. The config format is the same.
 
-## Other MCP Clients
+Any MCP client that supports stdio transport will work. Rescreen reads JSON-RPC from stdin and writes responses to stdout.
 
-### Claude Desktop
+## Tools
 
-Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
+Rescreen exposes five MCP tools:
 
-```json
-{
-  "mcpServers": {
-    "rescreen": {
-      "command": "rescreen",
-      "args": ["--app", "com.google.Chrome"]
-    }
-  }
-}
-```
+**`rescreen_perceive`** — Look at an app. Returns the UI tree (`accessibility`), a screenshot (`screenshot`), both (`composite`), or search results (`find`).
 
-### Cursor
+**`rescreen_act`** — Do something in an app. Supports `click`, `double_click`, `right_click`, `hover`, `drag`, `scroll`, `type`, `press`, `select`, `focus`, `launch`, `close`, `clipboard_read`, `clipboard_write`, and `url`.
 
-Add via Settings > MCP Servers > Add:
+**`rescreen_overview`** — List all visible windows and which apps they belong to.
 
-```json
-{
-  "mcpServers": {
-    "rescreen": {
-      "command": "rescreen",
-      "args": ["--app", "com.google.Chrome"]
-    }
-  }
-}
-```
+**`rescreen_status`** — Show what permissions are active.
 
-### Any MCP Client
+**`rescreen_filesystem`** — Read, write, list, delete, and search files within allowed paths.
 
-The broker reads JSON-RPC 2.0 from stdin and writes responses to stdout. All logging goes to stderr. Any MCP client that supports stdio transport can connect.
+## Profiles
 
-## CLI Reference
-
-```
-rescreen [options]
-
-Options:
-  --app <bundle-id>     Add a permitted app (can be repeated)
-  --profile <name>      Load a permission profile from ~/.rescreen/profiles/
-  --fs-allow <path>     Allow filesystem access to path (can be repeated)
-  --confirm             Enable native macOS confirmation dialogs (NSPanel)
-  --confirm-tty         Enable terminal-based confirmation
-  --list-apps           List running applications with their bundle IDs
-  --version             Show version
-  --help                Show this help
-```
-
-By default, actions execute immediately within the granted scope. The MCP client (Claude Code, Cursor, etc.) handles user confirmation at the chat level. Use `--confirm` or `--confirm-tty` only if you want an additional broker-level confirmation step.
-
-### Finding Bundle IDs
-
-```
-$ rescreen --list-apps
-Running applications:
-
-  Chrome            com.google.Chrome
-  Finder            com.apple.finder
-  Slack             com.tinyspeck.slackmacgap
-  VS Code           com.microsoft.VSCode
-
-Use --app <bundle-id> to permit an application.
-```
-
-Or for any `.app`:
-
-```bash
-mdls -name kMDItemCFBundleIdentifier /Applications/Safari.app
-```
-
-## MCP Tools
-
-### `rescreen_perceive`
-
-Capture UI state from a target application.
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `app` | string | **Required.** Bundle ID of the target app |
-| `type` | string | `accessibility` (default), `screenshot`, `composite`, `find` |
-| `max_depth` | int | Max tree depth (default 8, max 20) |
-| `max_nodes` | int | Max nodes to capture (default 300, max 5000) |
-| `query` | string | Search query for `find` type |
-| `role` | string | Filter by role for `find` type |
-
-- **`accessibility`** — Structured UI tree with ARIA-derived roles, bounds, states, values
-- **`screenshot`** — PNG screenshot as base64-encoded image content
-- **`composite`** — Both screenshot and accessibility tree in one call
-- **`find`** — Search the accessibility tree by text query and/or role
-
-### `rescreen_act`
-
-Perform actions on a target application.
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `app` | string | **Required.** Bundle ID |
-| `action` | string | **Required.** Action type |
-| `element` | string | Element ID from perceive (e.g., `e42`) |
-| `value` | string | Text for `type`, key combo for `press` |
-| `x`, `y` | number | Screen coordinates (fallback) |
-| `from`, `to` | object | Drag start/end `{x, y}` |
-
-**Actions:** `click`, `double_click`, `right_click`, `hover`, `drag`, `scroll`, `type`, `press`, `select`, `focus`, `launch`, `close`, `clipboard_read`, `clipboard_write`, `url`
-
-### `rescreen_overview`
-
-List all running applications with window info.
-
-### `rescreen_status`
-
-Get session info and active capability grants.
-
-### `rescreen_filesystem`
-
-Scoped filesystem operations (requires `--fs-allow`).
-
-| Parameter | Type | Description |
-|-----------|------|-------------|
-| `operation` | string | `read`, `write`, `list`, `delete`, `metadata`, `search` |
-| `path` | string | Target path |
-| `content` | string | Content for `write` |
-| `recursive` | bool | Recursive `list` |
-| `query` | string | Search term |
-
-## Permission Profiles
-
-Create YAML profiles in `~/.rescreen/profiles/` for reusable permission sets.
-
-Example profiles are created on first run:
-
-**`coding`** — IDE + browser for pair programming:
+If you use the same set of permissions often, save them as a YAML profile in `~/.rescreen/profiles/`:
 
 ```yaml
-name: "Coding Assistant"
-description: "AI pair programmer with IDE, browser, and project filesystem access"
+name: "Coding"
 capabilities:
   - domain: perception.*
     target: { app: "com.microsoft.VSCode" }
@@ -283,36 +128,39 @@ capabilities:
     confirmation: silent
 ```
 
-**`browser-research`** — Read-only browser access:
-
-```yaml
-name: "Browser Research"
-description: "Read-only browser access for web research"
-capabilities:
-  - domain: perception.*
-    target: { app: "com.google.Chrome" }
-    confirmation: silent
-  - domain: action.input.mouse
-    target: { app: "com.google.Chrome" }
-    confirmation: logged
-```
+Then use it with `--profile coding`.
 
 ## Security
 
-- **Capability grants** — Every operation requires a matching grant. Grants specify domain, target app, and confirmation tier (`silent`, `logged`, `confirm`, `block`).
-- **Z-order occlusion** — Visual actions are blocked if unpermitted windows overlap the target app, preventing spoofing attacks.
-- **File picker interception** — Validates selected paths against allowed scope before permitting Open/Save clicks.
-- **Timing normalization** — Denied requests are padded to 5ms minimum to prevent resource existence probing.
-- **Path traversal protection** — All paths canonicalized with symlink resolution and boundary checking.
-- **Audit logging** — Every operation logged to `~/.rescreen/logs/` as JSON lines.
+Rescreen is designed so the agent can only do what you've allowed:
+
+- Actions require a matching capability grant. No grant, no action.
+- If an unpermitted window overlaps the target app, Rescreen auto-focuses the target and logs a warning.
+- File paths are canonicalized with symlink resolution to prevent traversal attacks.
+- File picker clicks are validated against your allowed paths.
+- Denied requests are padded to a minimum duration to prevent timing-based probing.
+- Everything is logged to `~/.rescreen/logs/` as JSON lines.
+
+## CLI reference
+
+```
+rescreen [options]
+
+  --app <bundle-id>     Permit an app (repeatable)
+  --profile <name>      Load a profile from ~/.rescreen/profiles/
+  --fs-allow <path>     Allow filesystem access to a path (repeatable)
+  --confirm             Enable native macOS confirmation dialogs
+  --confirm-tty         Enable terminal-based confirmation
+  --list-apps           List running apps with bundle IDs
+  --version             Show version
+  --help                Show help
+```
 
 ## Testing
 
 ```bash
 make test
 ```
-
-101 tests covering path validation, capability grants, wildcard matching, role normalization, JSON-RPC, timing normalization, and more.
 
 ## License
 

@@ -7,6 +7,7 @@ final class ZOrderMonitor {
     private let windowManager: WindowManager
     private let permittedBundleIDs: () -> Set<String>
     private let brokerPID: Int32
+    private let parentPID: Int32
 
     struct OcclusionReport {
         let isOccluded: Bool
@@ -23,6 +24,7 @@ final class ZOrderMonitor {
         self.windowManager = windowManager
         self.permittedBundleIDs = permittedBundleIDs
         self.brokerPID = ProcessInfo.processInfo.processIdentifier
+        self.parentPID = getppid()
     }
 
     /// Check if any unpermitted windows overlap the windows of a permitted app.
@@ -49,6 +51,9 @@ final class ZOrderMonitor {
 
                 // Skip the broker's own windows (confirmation panel)
                 if window.ownerPID == Int(brokerPID) { continue }
+
+                // Skip the parent process (terminal running the broker)
+                if window.ownerPID == Int(parentPID) { continue }
 
                 // Skip windows from other permitted apps
                 if let bundleID = window.ownerBundleID, permitted.contains(bundleID) { continue }
