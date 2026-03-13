@@ -168,13 +168,13 @@ final class MCPServer {
     private var actTool: MCPToolDefinition {
         MCPToolDefinition(
             name: "rescreen_act",
-            description: "Perform an action on a permitted application. Supports click, double_click, right_click, hover, drag, type, press (keyboard shortcuts), scroll, focus, launch, close, clipboard_read, clipboard_write, and url. Prefer element-based targeting over coordinates.",
+            description: "Perform an action on a permitted application. Supports click, double_click, right_click, hover, drag, type, press (keyboard shortcuts), scroll, navigate (go to URL in browser), focus, launch, close, clipboard_read, clipboard_write, and url. Use 'actions' array to batch multiple actions in one call. Prefer element-based targeting over coordinates.",
             inputSchema: [
                 "type": "object",
                 "properties": [
                     "type": [
                         "type": "string",
-                        "enum": ["click", "double_click", "right_click", "hover", "drag", "type", "press", "scroll", "select", "focus", "launch", "close", "clipboard_read", "clipboard_write", "url"],
+                        "enum": ["click", "double_click", "right_click", "hover", "drag", "type", "press", "scroll", "select", "navigate", "focus", "launch", "close", "clipboard_read", "clipboard_write", "url"],
                         "description": "Action type",
                     ] as [String: Any],
                     "target": [
@@ -229,8 +229,18 @@ final class MCPServer {
                         "type": "number",
                         "description": "Drag duration in seconds (default: 0.3)",
                     ] as [String: Any],
+                    "wait": [
+                        "type": "number",
+                        "description": "Seconds to wait after navigate (default: 2, max: 10)",
+                    ] as [String: Any],
+                    "actions": [
+                        "type": "array",
+                        "description": "Batch mode: array of action objects to execute sequentially (max 20). Each object has the same schema as a single action. When provided, 'type' is not required at the top level.",
+                        "items": [
+                            "type": "object",
+                        ] as [String: Any],
+                    ] as [String: Any],
                 ] as [String: Any],
-                "required": ["type"],
             ] as [String: Any]
         )
     }

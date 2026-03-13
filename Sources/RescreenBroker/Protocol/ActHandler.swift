@@ -32,6 +32,11 @@ final class ActHandler {
     }
 
     func handle(arguments: [String: Any]) -> [String: Any] {
+        // Action batching: if "actions" array is provided, execute each sequentially.
+        if let actions = arguments["actions"] as? [[String: Any]] {
+            return handleBatch(actions: actions)
+        }
+
         guard let type = arguments["type"] as? String else {
             return errorResult("Missing required parameter: type")
         }
@@ -64,7 +69,7 @@ final class ActHandler {
 
         // Z-order occlusion check: auto-focus target app if occluded, then warn (never block).
         // Blocking on occlusion is impractical — users always have unpermitted apps open.
-        let visualActions: Set<String> = ["click", "double_click", "right_click", "hover", "drag", "type", "press", "scroll", "select"]
+        let visualActions: Set<String> = ["click", "double_click", "right_click", "hover", "drag", "type", "press", "scroll", "select", "navigate"]
         if visualActions.contains(type), let monitor = zOrderMonitor {
             var occlusion = monitor.checkOcclusion(forPID: pid)
             if occlusion.isOccluded {
@@ -129,6 +134,8 @@ final class ActHandler {
             return handleFocus(resolved: resolved, bundleID: bundleID, appName: appName)
         case "close":
             return handleClose(resolved: resolved, bundleID: bundleID, appName: appName)
+        case "navigate":
+            return handleNavigate(arguments: arguments, resolved: resolved, pid: pid, bundleID: bundleID, appName: appName)
         case "clipboard_read":
             return handleClipboardRead(bundleID: bundleID)
         case "clipboard_write":
@@ -515,6 +522,92 @@ final class ActHandler {
             return textResult(url)
         }
         return textResult("Could not detect URL from \(bundleID)")
+    }
+
+    // MARK: - Action Batching
+
+    private func handleBatch(actions: [[String: Any]]) -> [String: Any] {
+        guard !actions.isEmpty else {
+            return errorResult("Empty actions array")
+        }
+        guard actions.count <= 20 else {
+            return errorResult("Too many actions in batch (max 20, got \(actions.count))")
+        }
+
+        var results: [String] = []
+        for (index, action) in actions.enumerated() {
+            let result = handle(arguments: action)
+            // Extract the text from the result
+            if let content = result["content"] as? [[String: Any]],
+               let first = content.first,
+               let text = first["text"] as? String {
+                results.append("[\(index + 1)] \(text)")
+            }
+            // Stop on error
+            if let isError = result["isError"] as? Bool, isError {
+                results.append("Batch stopped at action \(index + 1) due to error.")
+                return errorResult(results.joined(separator: "\n"))
+            }
+            // Small delay between actions for UI to settle
+            if index < actions.count - 1 {
+                Thread.sleep(forTimeInterval: 0.1)
+            }
+        }
+
+        return textResult(results.joined(separator: "\n"))
+    }
+
+    // MARK: - Navigate
+
+    private func handleNavigate(arguments: [String: Any], resolved: (app: NSRunningApplication, element: AXUIElement), pid: Int32, bundleID: String, appName: String) -> [String: Any] {
+        guard let url = arguments["value"] as? String else {
+            return errorResult("Navigate requires 'value' (the URL)")
+        }
+
+        let detail = "Navigate to \(url) in \(appName)"
+        let confirmation = capabilities.requestConfirmation(action: "navigate", detail: detail, bundleID: bundleID)
+        switch confirmation {
+        case .denied(let reason):
+            auditLogger.log(operation: "act.navigate", app: bundleID, result: "denied", confirmation: "confirm")
+            return deniedResult(action: "navigate", reason: reason)
+        case .allowed:
+            break
+        }
+
+        // Focus the app
+        resolved.app.activate()
+        Thread.sleep(forTimeInterval: 0.2)
+
+        // Cmd+L to focus the address bar (works in all major browsers)
+        let focusBar = inputSynthesizer.pressKeys("cmd+l", for: pid)
+        guard focusBar else {
+            auditLogger.log(operation: "act.navigate", app: bundleID, result: "error", confirmation: "confirm")
+            return errorResult("Failed to focus address bar (cmd+l)")
+        }
+        Thread.sleep(forTimeInterval: 0.15)
+
+        // Type the URL
+        let typed = inputSynthesizer.typeText(url, for: pid)
+        guard typed else {
+            auditLogger.log(operation: "act.navigate", app: bundleID, result: "error", confirmation: "confirm")
+            return errorResult("Failed to type URL")
+        }
+        Thread.sleep(forTimeInterval: 0.1)
+
+        // Press Enter
+        let entered = inputSynthesizer.pressKeys("Return", for: pid)
+        guard entered else {
+            auditLogger.log(operation: "act.navigate", app: bundleID, result: "error", confirmation: "confirm")
+            return errorResult("Failed to press Enter")
+        }
+
+        // Wait for page to start loading
+        let waitTime = arguments["wait"] as? Double ?? 2.0
+        let clampedWait = min(max(waitTime, 0), 10.0)
+        Thread.sleep(forTimeInterval: clampedWait)
+
+        auditLogger.log(operation: "act.navigate", app: bundleID, params: ["url": url], result: "success", confirmation: "confirm")
+        return textResult("Navigated to \(url) in \(appName)")
     }
 
     // MARK: - Point Resolution

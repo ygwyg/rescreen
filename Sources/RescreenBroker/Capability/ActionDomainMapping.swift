@@ -12,6 +12,7 @@ enum ActionDomainMapping {
         case "type":         return "action.input.keyboard"
         case "press":        return "action.input.keyboard"
         case "scroll":       return "action.input.mouse"
+        case "navigate":     return "action.input.keyboard"
         case "select":       return "action.input.select"
         case "focus":        return "action.app.focus"
         case "launch":       return "action.app.launch"
